@@ -9,83 +9,98 @@ from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 from concurrent.futures import ThreadPoolExecutor
 
-def ProcessAd(ad, actions, ws, maxRow):
+def ProcessAd(ad, ws, totalPromotions, options, index, page):
     title = ad.find_element(By.CSS_SELECTOR, '.iva-item-titleStep-pdebR').text
 
     productLink = ad.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
 
-    totalPromotion = ''
-    try:
-        tooltipElement = ad.find_element(By.CSS_SELECTOR, '.styles-arrow-jfRdd')
-        actions.move_to_element(tooltipElement).perform()
-        promotions = ad.find_elements(By.CSS_SELECTOR, '.styles-entry-MuP_G')
-        for promotion in promotions:
-            promotionElement = promotion.text
-            if promotionElement == "Продвинуто":
-                if re.search("https://www.avito.st/s/common/components/monetization/icons/web/x20",
-                             promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
-                    promotionElement = "Продвинуто x20"
-                elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x5",
-                               promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
-                    promotionElement = "Продвинуто x5"
-                elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x10",
-                               promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
-                    promotionElement = "Продвинуто x10"
-                elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x15",
-                               promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
-                    promotionElement = "Продвинуто x15"
-                elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x2.",
-                               promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
-                    promotionElement = "Продвинуто x2"
-            totalPromotion += promotionElement + ' '
-    except NoSuchElementException:
-        totalPromotion = "Нет"
+    adDriver = webdriver.Chrome(options=options)
+    adDriver.get(productLink)
 
     sellerLink = ''
     try:
-        sellerElement = ad.find_element(By.CSS_SELECTOR, '.style-title-_wK5H')
-        sellerLink = ad.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
-        seller = sellerElement.text
+        seller = adDriver.find_element(By.CSS_SELECTOR, '.styles-module-size_ms-EVWML').text
+        sellerLink = adDriver.find_element(By.CSS_SELECTOR, "a[data-marker='seller-link/link']").get_attribute('href')
     except NoSuchElementException:
         seller = "Нет"
 
-    adDriver = webdriver.Chrome(options=options)
-    adDriver.get(productLink)
-    views = adDriver.find_element(By.CSS_SELECTOR, '.style-item-footer-Ufxh_')
-    views = re.search(r'\d+ просмот(?:р|ров|ра)? \(\+\d+ сегодня\)', views.text).group()
-    ws.append([title, seller, totalPromotion, views])
-    print(title, '|', seller, '|', totalPromotion, '|', views)
+    views = adDriver.find_element(By.CSS_SELECTOR, '.style-item-footer-Ufxh_').text
+    views = re.findall(r'\d+', views)
+    today_views = int(views[4])
+    views = int(views[3])
 
-    ws.cell(row=maxRow, column=1).hyperlink = productLink
-    ws.cell(row=maxRow, column=2).hyperlink = sellerLink
-    maxRow += 1
+    position = index + (page - 1) * 50 + 2
+    print(index + (page - 1) * 50, '|', title, '|', seller, '|', totalPromotions[index], '|', views, '|', today_views, '|', sellerLink, '|', productLink)
+
+    ws.cell(row=position, column=1, value=title).hyperlink = productLink
+    ws.cell(row=position, column=2, value=seller).hyperlink = sellerLink
+    ws.cell(row=position, column=3, value=totalPromotions[index])
+    ws.cell(row=position, column=4, value=views)
+    ws.cell(row=position, column=5, value=today_views)
+    ws.cell(row=position, column=6, value=0)
 
     adDriver.quit()
 
-with ThreadPoolExecutor(max_workers=5) as executor:
-    wb = Workbook()
-    ws = wb.active
-    ws.append(['Название', 'Селлер', 'Продвижение', 'Просмотры'])
-    alignment = Alignment(horizontal='center', vertical='center')
-    maxRow = 2
+wb = Workbook()
+ws = wb.active
+ws.append(['Название', 'Селлер', 'Продвижение', 'Просмотры', 'За сегодня', 'Номер'])
+alignment = Alignment(horizontal='center', vertical='center')
 
-    options = Options()
-    options.add_argument('--start-maximized')
+options = Options()
+options.add_argument('--headless')
 
-    driver = webdriver.Chrome(options=options)
+driver = webdriver.Chrome()
+driver.maximize_window()
 
-    product = 'клининг'
-    driver.get("https://www.avito.ru/moskva/predlozheniya_uslug/uborka_klining-ASgBAgICAUSYC7L3AQ?cd=1&q=" + product)
+product = 'клининг'
+driver.get("https://www.avito.ru/moskva/predlozheniya_uslug/uborka_klining-ASgBAgICAUSYC7L3AQ?cd=1&q=" + product)
 
-    actions = ActionChains(driver)
-    nextButton = driver.find_element(By.CSS_SELECTOR, '.styles-module-listItem_arrow_next-GnEQw')
+actions = ActionChains(driver)
+pageNum = int(driver.find_element(By.CSS_SELECTOR, '.styles-module-listItem_last-_ZfSe').text)
 
-    # for page in range(1, int(driver.find_element(By.CSS_SELECTOR, '.styles-module-listItem_last-_ZfSe').text) + 1):
-    ads = driver.find_elements(By.CSS_SELECTOR, '.iva-item-content-rejJg')
-    adsChunks = [ads[i::5] for i in range(5)]
+for page in range(1, 2):
+    print('Номер страницы: ' + str(page))
+    try:
+        ads = driver.find_elements(By.CSS_SELECTOR, '.iva-item-content-rejJg')
+    except NoSuchElementException:
+        break
+    totalPromotions = []
     for ad in ads:
-        ProcessAd(ad, actions, ws, maxRow)
-    nextButton.click()
+        totalPromotion = ''
+        try:
+            tooltipElement = ad.find_element(By.CSS_SELECTOR, '.styles-arrow-jfRdd')
+            actions.move_to_element(tooltipElement).perform()
+            promotions = ad.find_elements(By.CSS_SELECTOR, '.styles-entry-MuP_G')
+            for promotion in promotions:
+                promotionElement = promotion.text
+                if promotionElement == "Продвинуто":
+                    if re.search("https://www.avito.st/s/common/components/monetization/icons/web/x20",
+                                 promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
+                        promotionElement = "Продвинуто x20"
+                    elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x5",
+                                   promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
+                        promotionElement = "Продвинуто x5"
+                    elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x10",
+                                   promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
+                        promotionElement = "Продвинуто x10"
+                    elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x15",
+                                   promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
+                        promotionElement = "Продвинуто x15"
+                    elif re.search("https://www.avito.st/s/common/components/monetization/icons/web/x2.",
+                                   promotion.find_element(By.CSS_SELECTOR, 'img').get_attribute('src')):
+                        promotionElement = "Продвинуто x2"
+                totalPromotion += promotionElement + ' '
+        except NoSuchElementException:
+            totalPromotion = "Нет"
+        totalPromotions.append(totalPromotion)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for index, ad in enumerate(ads):
+            executor.submit(ProcessAd, ad, ws, totalPromotions, options, index, page)
+    try:
+        nextButton = driver.find_element(By.XPATH, '//a[@data-marker="pagination-button/nextPage"]')
+        nextButton.click()
+    except NoSuchElementException:
+        break
 for row in ws.rows:
     for cell in row:
         cell.alignment = alignment
