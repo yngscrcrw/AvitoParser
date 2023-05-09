@@ -1,4 +1,5 @@
 import re
+import time
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
@@ -9,7 +10,9 @@ from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 from concurrent.futures import ThreadPoolExecutor
 
+
 def ProcessAd(ad, ws, totalPromotions, options, index, page):
+    time.sleep(5)
     title = ad.find_element(By.CSS_SELECTOR, '.iva-item-titleStep-pdebR').text
 
     productLink = ad.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
@@ -23,14 +26,12 @@ def ProcessAd(ad, ws, totalPromotions, options, index, page):
         sellerLink = adDriver.find_element(By.CSS_SELECTOR, "a[data-marker='seller-link/link']").get_attribute('href')
     except NoSuchElementException:
         seller = "Нет"
-
-    views = adDriver.find_element(By.CSS_SELECTOR, '.style-item-footer-Ufxh_').text
-    views = re.findall(r'\d+', views)
-    today_views = int(views[4])
-    views = int(views[3])
+    views = int(adDriver.find_element(By.XPATH, '//span[@data-marker="item-view/total-views"]').text.strip().split()[0])
+    today_views = int(re.search(r'\d+', adDriver.find_element(By.XPATH, '//span[@data-marker="item-view/today-views"]').text).group())
 
     position = index + (page - 1) * 50 + 2
-    print(index + (page - 1) * 50, '|', title, '|', seller, '|', totalPromotions[index], '|', views, '|', today_views, '|', sellerLink, '|', productLink)
+    print(index + (page - 1) * 50, '|', title, '|', seller, '|', totalPromotions[index], '|', views, '|', today_views,
+          '|', sellerLink, '|', productLink)
 
     ws.cell(row=position, column=1, value=title).hyperlink = productLink
     ws.cell(row=position, column=2, value=seller).hyperlink = sellerLink
@@ -41,6 +42,7 @@ def ProcessAd(ad, ws, totalPromotions, options, index, page):
 
     adDriver.quit()
 
+
 wb = Workbook()
 ws = wb.active
 ws.append(['Название', 'Селлер', 'Продвижение', 'Просмотры', 'За сегодня', 'Номер'])
@@ -49,7 +51,7 @@ alignment = Alignment(horizontal='center', vertical='center')
 options = Options()
 options.add_argument('--headless')
 
-driver = webdriver.Chrome()
+driver = webdriver.Chrome(options=options)
 driver.maximize_window()
 
 product = 'клининг'
@@ -58,7 +60,7 @@ driver.get("https://www.avito.ru/moskva/predlozheniya_uslug/uborka_klining-ASgBA
 actions = ActionChains(driver)
 pageNum = int(driver.find_element(By.CSS_SELECTOR, '.styles-module-listItem_last-_ZfSe').text)
 
-for page in range(1, 2):
+for page in range(1, pageNum + 1):
     print('Номер страницы: ' + str(page))
     try:
         ads = driver.find_elements(By.CSS_SELECTOR, '.iva-item-content-rejJg')
